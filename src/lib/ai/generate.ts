@@ -8,6 +8,7 @@ import {
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateGemini } from './providers/gemini'
 
 export interface GenerateArgs {
   config: AiConfig
@@ -35,6 +36,9 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 
   let result: { text: string; usage: AiUsage | null }
   switch (config.provider) {
+    case 'gemini':
+      result = await generateGemini(providerArgs)
+      break
     case 'openai':
       result = await generateOpenAi(providerArgs)
       break
@@ -52,6 +56,26 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
+ * Format markdown text to WhatsApp-compatible styling.
+ * WhatsApp supports *bold*, _italic_, ~strikethrough~, ```code```, and • bullets.
+ * Standard markdown uses **bold** and * bullet points, which display as raw asterisks on WhatsApp.
+ */
+export function formatForWhatsApp(text: string): string {
+  if (!text) return ''
+  return (
+    text
+      // Convert markdown headers (### Header) to bold (*Header*)
+      .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+      // Convert markdown bullet points starting with '* ' or '+ ' to '• '
+      .replace(/^[\*\+]\s+/gm, '• ')
+      // Convert markdown bold '**text**' to WhatsApp bold '*text*'
+      .replace(/\*\*([^*]+)\*\*/g, '*$1*')
+      // Clean up multiple asterisks left around words like '***text***' -> '*text*'
+      .replace(/\*{3,}([^*]+)\*{3,}/g, '*$1*')
+  )
+}
+
+/**
  * Split the raw model output into `{ text, handoff, usage }`. The
  * sentinel can appear alone or trailing a partial reply; either way we
  * treat the turn as a handoff and strip the marker from any remaining
@@ -63,6 +87,7 @@ export function parseGeneration(
   usage: AiUsage | null = null,
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
-  const text = raw.split(HANDOFF_SENTINEL).join('').trim()
+  const stripped = raw.split(HANDOFF_SENTINEL).join('').trim()
+  const text = formatForWhatsApp(stripped)
   return { text, handoff, usage }
 }
